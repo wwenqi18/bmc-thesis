@@ -1,0 +1,190 @@
+(* construct graph given a list of points and radius *)
+
+buildGraph[points_, r_] := Module[{n, distM, adjM, g},
+  n = Length[points];
+  distM = DistanceMatrix[points];
+  adjM = ConstantArray[0, {n, n}];
+  adjM = ReplacePart[adjM, Position[distM, x_ /; x < r && x > 0] -> 1];
+  g = AdjacencyGraph[adjM, VertexLabels -> "Name"];
+  Return[g]
+  ]
+
+(* find all cliques of size k in graph g *)
+
+findkClique[g_, k_] := 
+ Module[{n, maxsize, maxCliques, allCliques, kClique},
+  n = VertexCount[g];
+  maxsize = First@(Length /@ FindClique[g]);
+  maxCliques = 
+   Select[Table[
+     FindClique[g, {i}, Binomial[n, i]], {i, 1, 
+      maxsize}], # != {} &];
+  allCliques = 
+   Select[Flatten[Subsets /@ Flatten[maxCliques, 1], 1], # != {} &];
+  kClique = Union[Select[allCliques, Length[#] == k &]];
+  Return[kClique]
+  ]
+
+(* find all cliques in graph g *)
+
+findAllCliques[g_] := Module[{maxsize, list},
+  maxsize = First@(Length /@ FindClique[g]);
+  list = Table[findkClique[g, i], {i, 1, maxsize}];
+  Return[list]
+  ]
+
+(* generate boundary matrix that maps k-chain to k-1-chain in graph g \
+*)
+boundaryMatrix[g_, k_] := Module[{kClique, k1Clique, M},
+  kClique = findkClique[g, k];
+  k1Clique = findkClique[g, k - 1]; 
+  M = ConstantArray[0, {Length[kClique], Length[k1Clique]}];
+  For[i = 1, i <= Length[kClique], i++,
+   boundaries = Select[Subsets[kClique[[i]]], Length[#] == k - 1 &];
+   indexlist = 
+    Flatten[Table[
+      Position[k1Clique, boundaries[[j]]], {j, 1, 
+       Length[boundaries]}]];
+   M[[i, indexlist]] = 1;
+   ];
+  Return[M]
+  ]
+
+(* generate a list of n random points on a rose curve with amplitude \
+a and radius r *)
+sampleRose[a_, r_, n_] := Module[{points},
+  (* points=Table[{a*Cos[r*t] *Cos[t],a*Cos[r*t]*Sin[t]},{t,
+  RandomReal[{0,2*Pi},n]}]; *)
+  
+  points = Table[{a*Cos[r*t] *Cos[t], a*Cos[r*t]*Sin[t]}, {t, 0, 
+     2*Pi，0.1}];
+  Return[points]
+  ]
+
+(* compute the betti numbers for complexes in a graph g *)
+
+computeBetti[g_] := 
+ Module[{maxSize, rankList, sumList, csizeList, bettiList},
+  maxSize = First@(Length /@ FindClique[g]);
+  rankList = 
+   Table[MatrixRank[boundaryMatrix[g, k], Modulus -> 2], {k, 2, 
+     maxSize}];
+  rankList = Flatten[{0, rankList, 0}];
+  sumList = Most[rankList + RotateLeft[rankList]];
+  csizeList = Table[Length[findkClique[g, k]], {k, 1, maxSize}];
+  bettiList = csizeList - sumList;
+  Return[bettiList]
+  ]
+
+getFiltration[points_, max_, step_] := Module[{gList},
+  gList = Table[buildGraph[points, r], {r, 0, max, step}];
+  Return [findAllCliques /@ gList]
+  ]
+
+getOrderedList[fList_] := Module[{orderedList},
+  orderedList = Flatten[fList[[1]], 1];
+  For[i = 1, i < Length[fList], i++,
+   newSimplices = 
+    Complement[Flatten[fList[[i + 1]], 1], Flatten[fList[[i]], 1]];
+   For[j = 1, j <= Length[newSimplices], j++,
+    orderedList = Append[orderedList, newSimplices[[j]]]
+    ];
+   ];
+  Return[orderedList]
+  ]
+
+faceMatrix[sList_] := Module[{n, faceMatrix},
+  n = Length[sList];
+  faceMatrix = ConstantArray[0, {n, n}];
+  nPoints = Count[sList, x_ /; Length[x] <= 1];
+  For[i = nPoints + 1, i <= n, i++,
+   allFaces = Select[Subsets[sList[[i]]], Length[#] > 1 &];
+   faceIdx = Flatten[Position[sList, Alternatives @@ allFaces]];
+   faceMatrix[[i, faceIdx]] = 1;
+   ];
+  Return[Transpose[faceMatrix]]
+  ]
+
+lowList[A_] := Module[{lowList},
+  lowList = {};
+  For[j = 1, j <= Length[A], j++,
+    maxIdx = Max@Position[Transpose[A][[j]], x_ /; x >= 1];
+    lowList = Append[lowList, maxIdx];
+    ]
+   Delete[lowList, 1];
+  Return[lowList]
+  ]
+
+low[col_] :=
+  
+  If[Count[col, x_ /; x != 0] == 0, -1, First[Last@Position[col, 1]]];
+
+addCol[M_, j_] := Module[{M1},
+  M1 = Transpose[M];
+  For[i = 1, i < j, i++,
+   If[low[M1[[i]]] == low[M1[[j]]],
+    M1[[j]] = Mod[M1[[j]] + M1[[i]], 2];
+    ]
+   ];
+  Return[Transpose[M1]]
+  ]
+
+reduce[M_] := Module[{n, M1},
+  n = Length[M];
+  M1 = Transpose[M];
+  For[j = 2, j <= n, j++,
+   M1 = addCol[M1, j];
+   ];
+  Return[Transpose[M1]]
+  ]
+
+dg[idx_, flist_, olist_] := Module[{sim, deg},
+  sim = olist[[idx]];
+  deg = Position[flist, x_ /; x == sim, 3];
+  deg = First[Flatten@deg];
+  Return[deg]
+  ]
+
+constructIntervals[M_, flist_, olist_, maxF_] := 
+ Module[{n, M1, intervals},
+  n = Length[M];
+  M1 = Transpose[M];
+  intervals = {};
+  For[i = 1, i <= n, i++,
+   If[low[M1[[i]]] == -1,
+    intervals = Append[intervals, {i}],
+    intervals = Append[intervals, {i, low[M1[[i]]]}]
+    ]
+   ];
+  For[i = 1, i <= Length[intervals], i++,
+   If[Length[intervals[[i]]] == 1,
+     intervals[[i]] = {dg[First@intervals[[i]], flist, olist], maxF},
+     intervals[[i]] = {dg[First@intervals[[i]], flist, olist], 
+       dg[Last@intervals[[i]], flist, olist]}
+     ];
+   ];
+  Return[Union@intervals]
+  ]
+
+seg[a_, b_, n_] := Graphics[Line[{{a, n}, {b, n}}]]; 
+segs[list_] := 
+ Show @@ (seg /@ Flatten /@ Transpose[{list, Range[Length@list]/10}])
+
+
+
+
+
+
+
+(* main *)
+(*a = 2;
+r = 2;
+step = 0.2;
+points = Table[{a*Cos[r*t] \
+*Cos[t],a*Cos[r*t]*Sin[t]},{t,0,2*Pi,step}];Length[points]*)
+
+points = RandomReal[1, {5, 2}];
+flist = getFiltration[points, 1, 0.2];
+olist = getOrderedList[flist];
+M = faceMatrix[olist];
+M = reduce[M];

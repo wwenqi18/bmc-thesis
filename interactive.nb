@@ -1,0 +1,9 @@
+Manipulate[ Module[{points, distM, adjM},
+  points = RandomReal[m, {n, 2}];
+  distM = DistanceMatrix[points];
+  adjM = ConstantArray[0, {n, n}];
+  adjM = ReplacePart[adjM, Position[distM, x_ /; x < r && x > 0] -> 1];
+  AdjacencyGraph[adjM, VertexLabels -> "Name"]],
+ {n, 1, 50, 1}, {m, 1, 10, 1}, {r, 0, 5}]
+(* n: number of points; m: max value of point coordinates; r: \
+distance *)

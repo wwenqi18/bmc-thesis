@@ -4,7 +4,8 @@ buildGraph[points_, r_] := Module[{n, distM, adjM, g},
   n = Length[points];
   distM = DistanceMatrix[points];
   adjM = ConstantArray[0, {n, n}];
-  adjM = ReplacePart[adjM, Position[distM, x_ /; x < r && x > 0] -> 1];
+  adjM = ReplacePart[adjM, 
+    Position[distM, x_ /; x <= r && x > 0] -> 1];
   g = AdjacencyGraph[adjM, VertexLabels -> "Name"];
   Return[g]
   ]
@@ -61,6 +62,11 @@ sampleRose[a_, r_, n_] := Module[{points},
   Return[points]
   ]
 
+circle[r_, n_] := Module[{points},
+  points = Table[{r*Cos[t], r*Sin[t]}, {t, 0, 2*Pi, 2*Pi/n}];
+  Return[points];
+  ]
+
 (* compute the betti numbers for complexes in a graph g *)
 
 computeBetti[g_] := 
@@ -96,9 +102,10 @@ getOrderedList[fList_] := Module[{orderedList},
 faceMatrix[sList_] := Module[{n, faceMatrix},
   n = Length[sList];
   faceMatrix = ConstantArray[0, {n, n}];
-  nPoints = Count[sList, x_ /; Length[x] <= 1];
+  nPoints = Count[sList, x_ /; Length[x] == 1];
   For[i = nPoints + 1, i <= n, i++,
-   allFaces = Select[Subsets[sList[[i]]], Length[#] > 1 &];
+   allFaces = 
+    Select[Subsets[sList[[i]]], Length[#] == Length[sList[[i]]] - 1 &];
    faceIdx = Flatten[Position[sList, Alternatives @@ allFaces]];
    faceMatrix[[i, faceIdx]] = 1;
    ];
@@ -119,23 +126,27 @@ low[col_] :=
   
   If[Count[col, x_ /; x != 0] == 0, -1, First[Last@Position[col, 1]]];
 
-addCol[M_, j_] := Module[{M1},
-  M1 = Transpose[M];
-  For[i = 1, i < j, i++,
-   If[low[M1[[i]]] == low[M1[[j]]],
-    M1[[j]] = Mod[M1[[j]] + M1[[i]], 2];
-    ]
+lowExist[M_, j_] := Module[{n, MT, idx, res},
+  n = Length[M];
+  MT = Transpose[M];
+  idx = low[MT[[j]]];
+  If[idx < 0 || Total[M[[idx]]] <= 1 || Total[M[[idx, 1 ;; j]]] <= 1,
+   res = 0,
+   res = Min[Flatten@Position[M[[idx]], 1]]
    ];
-  Return[Transpose[M1]]
+  Return[res]
   ]
 
-reduce[M_] := Module[{n, M1},
+reduce[M_] := Module[{n, newM},
   n = Length[M];
-  M1 = Transpose[M];
-  For[j = 2, j <= n, j++,
-   M1 = addCol[M1, j];
+  newM = M;
+  For[j = 1, j <= n, j++,
+   While[lowExist[newM, j] != 0,
+    newM[[All, j]] = 
+     Mod[newM[[All, j]] + M[[All, lowExist[newM, j]]], 2]
+    ]
    ];
-  Return[Transpose[M1]]
+  Return[newM]
   ]
 
 dg[idx_, flist_, olist_] := Module[{sim, deg},
@@ -151,40 +162,45 @@ constructIntervals[M_, flist_, olist_, maxF_] :=
   M1 = Transpose[M];
   intervals = {};
   For[i = 1, i <= n, i++,
-   If[low[M1[[i]]] == -1,
-    intervals = Append[intervals, {i}],
+   If[low[M1[[i]]] != -1,
     intervals = Append[intervals, {i, low[M1[[i]]]}]
     ]
    ];
+  
+  For[i = 1, i <= n, i++,
+   If[low[M1[[i]]] == -1 && 
+      IntersectingQ[{i}, Flatten@intervals] == False,
+     intervals = Append[intervals, {i}]
+     ];
+   ];
+  
   For[i = 1, i <= Length[intervals], i++,
    If[Length[intervals[[i]]] == 1,
-     intervals[[i]] = {dg[First@intervals[[i]], flist, olist], maxF},
+     intervals[[i]] = {dg[First@intervals[[i]], flist, olist], 
+       Length[flist]},
      intervals[[i]] = {dg[First@intervals[[i]], flist, olist], 
        dg[Last@intervals[[i]], flist, olist]}
      ];
    ];
-  Return[Union@intervals]
+  intervals = Union[Sort /@ intervals];
+  intervals = 
+   Complement[intervals, Select[intervals, First[#] == Last[#] &]];
+  Return[intervals]
   ]
 
-seg[a_, b_, n_] := Graphics[Line[{{a, n}, {b, n}}]]; 
-segs[list_] := 
- Show @@ (seg /@ Flatten /@ Transpose[{list, Range[Length@list]/10}])
+seg[{a_, b_, n_}] := Graphics[Line[{{a, n}, {b, n}}]];
+segs[list_] := Module[{l},
+  l = DeleteCases[list, x_ /; x[[1]] == x[[2]]];
+  Return[Show @@ (seg /@ 
+      Flatten /@ Transpose[{l, Range[Length@l]/10}])]
+  ]
 
-
-
-
-
-
-
-(* main *)
-(*a = 2;
-r = 2;
-step = 0.2;
-points = Table[{a*Cos[r*t] \
-*Cos[t],a*Cos[r*t]*Sin[t]},{t,0,2*Pi,step}];Length[points]*)
-
-points = RandomReal[1, {5, 2}];
-flist = getFiltration[points, 1, 0.2];
-olist = getOrderedList[flist];
-M = faceMatrix[olist];
-M = reduce[M];
+barcode[points_, maxf_, step_] := Module[{flist, olist, M, l},
+  flist = getFiltration[points, maxf, step];
+  olist = getOrderedList[flist];
+  M = faceMatrix[olist];
+  M = reduce[M];
+  l = constructIntervals[M, flist, olist, maxf/step];
+  Print[l];
+  Return[segs[l]]
+  ]

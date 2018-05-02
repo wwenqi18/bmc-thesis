@@ -266,3 +266,15 @@ barcode[points_, maxf_, step_] :=
   ints = constructIntervals[M, flist, olist];
   Return[orderBars[ints, maxf, step]]
   ]
+
+
+Manipulate[Module[{points, maxf, step},
+  points = u;
+  maxf = v;
+  step = w;
+  t1 = Table[buildGraph[points, r], {r, 0, maxf, step}];
+  t2 = barcode[points, maxf, step];
+  TabView[{"Input" -> t1, "Barcode" -> t2}]
+  ],
+ {{u, {{1, 0}, {0, 0}, {0, 1}}, "Points"}}, {{v, 3, 
+   "Max Radius"}}, {{w, 1, "Step"}}]

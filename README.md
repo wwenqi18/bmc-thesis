@@ -1,3 +1,3 @@
 # thesis-project
-A Mathematica implementation for persistent homology computation and visualization
-coded for my undergraduate honors thesis in math at Bryn Mawr College
+A Mathematica program for persistent homology computation and visualization
+written for my undergraduate honors thesis in math at Bryn Mawr College
